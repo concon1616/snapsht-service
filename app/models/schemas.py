@@ -33,7 +33,7 @@ class VideoRequest(BaseModel):
     duration: int = Field(default=5000, ge=1000, le=30000)  # ms
     fps: int = Field(default=24, ge=10, le=60)
     format: Literal["mp4", "webm", "gif"] = "mp4"
-    scroll_speed: Literal["slow", "medium", "fast"] = "medium"
+    scroll_speed: Literal["slow", "medium", "fast", "realistic"] = "medium"
 
 
 class VideoResponse(BaseModel):

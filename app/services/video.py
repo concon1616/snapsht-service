@@ -33,11 +33,42 @@ class VideoService:
         }
         return speeds.get(speed, speeds["medium"])
 
+    def _generate_realistic_scroll_pattern(self, total_scroll: int, num_bursts: int = 3):
+        """
+        Generate a realistic scroll pattern with bursts and pauses.
+        Returns list of (scroll_position, is_pause) tuples.
+        """
+        pattern = []
+        scroll_per_burst = total_scroll / num_bursts
+
+        for burst in range(num_bursts):
+            start_pos = int(burst * scroll_per_burst)
+            end_pos = int((burst + 1) * scroll_per_burst)
+
+            # Fast scroll phase - accelerate then decelerate
+            scroll_frames = 15  # frames for each scroll burst
+            for i in range(scroll_frames):
+                # Ease-in-out curve for natural acceleration/deceleration
+                t = i / scroll_frames
+                ease = t * t * (3 - 2 * t)  # Smoothstep
+                pos = start_pos + (end_pos - start_pos) * ease
+                pattern.append((int(pos), False))
+
+            # Pause phase - stay still to "read" content
+            pause_frames = 20  # ~0.8 seconds at 24fps
+            for _ in range(pause_frames):
+                pattern.append((end_pos, True))
+
+        return pattern
+
     async def capture_video(self, request: VideoRequest) -> VideoResponse:
         """Capture a scrolling video of the URL."""
         video_id = str(uuid.uuid4())
         filename = f"{video_id}.{request.format}"
         filepath = self.settings.output_dir / filename
+
+        # Check for realistic scroll mode
+        realistic_mode = getattr(request, 'realistic', False) or request.scroll_speed == "realistic"
 
         async with browser_pool.get_driver() as driver:
             # Create temp directory for frames
@@ -61,48 +92,70 @@ class VideoService:
                     "return Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)"
                 )
 
-                # Calculate scroll parameters
-                scroll_per_frame = self._get_scroll_speed_pixels(request.scroll_speed, request.height)
                 total_scroll = max(0, page_height - request.height)
-
-                # Calculate frames needed
-                frame_interval = 1000 / request.fps  # ms per frame
-                total_frames = int((request.duration / 1000) * request.fps)
-
-                logger.info(f"Capturing {total_frames} frames at {request.fps} FPS")
 
                 # Scroll to top
                 driver.execute_script("window.scrollTo(0, 0)")
                 await asyncio.sleep(0.1)
 
-                # Capture frames
-                current_scroll = 0
                 frames_captured = 0
 
-                for frame_num in range(total_frames):
-                    # Capture frame
-                    screenshot = await asyncio.get_event_loop().run_in_executor(
-                        None, driver.get_screenshot_as_png
-                    )
+                if realistic_mode:
+                    # Realistic burst scrolling with pauses
+                    logger.info(f"Using realistic scroll pattern (3 bursts with pauses)")
+                    scroll_pattern = self._generate_realistic_scroll_pattern(total_scroll, num_bursts=3)
 
-                    # Save frame
-                    frame_path = temp_dir / f"frame_{frame_num:05d}.png"
-                    image = Image.open(BytesIO(screenshot))
+                    for scroll_pos, is_pause in scroll_pattern:
+                        # Capture frame
+                        screenshot = await asyncio.get_event_loop().run_in_executor(
+                            None, driver.get_screenshot_as_png
+                        )
 
-                    # Resize if needed to ensure consistent dimensions
-                    if image.size != (request.width, request.height):
-                        image = image.crop((0, 0, request.width, request.height))
+                        frame_path = temp_dir / f"frame_{frames_captured:05d}.png"
+                        image = Image.open(BytesIO(screenshot))
 
-                    image.save(frame_path, "PNG")
-                    frames_captured += 1
+                        if image.size != (request.width, request.height):
+                            image = image.crop((0, 0, request.width, request.height))
 
-                    # Scroll down
-                    if current_scroll < total_scroll:
-                        current_scroll = min(current_scroll + scroll_per_frame, total_scroll)
-                        driver.execute_script(f"window.scrollTo(0, {current_scroll})")
+                        image.save(frame_path, "PNG")
+                        frames_captured += 1
 
-                    # Small delay for smooth capture
-                    await asyncio.sleep(frame_interval / 1000 * 0.5)
+                        # Scroll to position
+                        driver.execute_script(f"window.scrollTo(0, {scroll_pos})")
+
+                        # Faster capture during scroll, slower during pause
+                        delay = 0.05 if not is_pause else 0.033
+                        await asyncio.sleep(delay)
+
+                else:
+                    # Original smooth scroll mode
+                    scroll_per_frame = self._get_scroll_speed_pixels(request.scroll_speed, request.height)
+                    frame_interval = 1000 / request.fps
+                    total_frames = int((request.duration / 1000) * request.fps)
+
+                    logger.info(f"Capturing {total_frames} frames at {request.fps} FPS")
+
+                    current_scroll = 0
+
+                    for frame_num in range(total_frames):
+                        screenshot = await asyncio.get_event_loop().run_in_executor(
+                            None, driver.get_screenshot_as_png
+                        )
+
+                        frame_path = temp_dir / f"frame_{frame_num:05d}.png"
+                        image = Image.open(BytesIO(screenshot))
+
+                        if image.size != (request.width, request.height):
+                            image = image.crop((0, 0, request.width, request.height))
+
+                        image.save(frame_path, "PNG")
+                        frames_captured += 1
+
+                        if current_scroll < total_scroll:
+                            current_scroll = min(current_scroll + scroll_per_frame, total_scroll)
+                            driver.execute_script(f"window.scrollTo(0, {current_scroll})")
+
+                        await asyncio.sleep(frame_interval / 1000 * 0.5)
 
                 logger.info(f"Captured {frames_captured} frames, encoding video...")
 
