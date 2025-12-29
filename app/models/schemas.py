@@ -34,6 +34,9 @@ class VideoRequest(BaseModel):
     fps: int = Field(default=24, ge=10, le=60)
     format: Literal["mp4", "webm", "gif"] = "mp4"
     scroll_speed: Literal["slow", "medium", "fast", "realistic"] = "medium"
+    scroll_depth: float = Field(default=1.0, ge=0.1, le=1.0)  # How much of page to scroll (0.1-1.0)
+    max_scroll_px: int | None = Field(default=None, ge=100)  # Max pixels to scroll (overrides depth)
+    pause_multiplier: float = Field(default=1.0, ge=0.5, le=3.0)  # Slow down pauses (1.0 = normal)
 
 
 class VideoResponse(BaseModel):

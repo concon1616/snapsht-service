@@ -34,7 +34,7 @@ class VideoService:
         }
         return speeds.get(speed, speeds["medium"])
 
-    def _generate_realistic_scroll_pattern(self, total_scroll: int):
+    def _generate_realistic_scroll_pattern(self, total_scroll: int, pause_multiplier: float = 1.0):
         """
         Generate a realistic scroll pattern mimicking human behavior.
         - Unequal scroll distances (some short, some long)
@@ -46,8 +46,13 @@ class VideoService:
         pattern = []
         current_pos = 0
 
-        # Generate random scroll segments going DOWN (4-7 segments)
-        num_down_scrolls = random.randint(4, 7)
+        # Adjust number of segments based on scroll distance (fewer for shorter scrolls)
+        if total_scroll < 1000:
+            num_down_scrolls = random.randint(2, 4)
+        elif total_scroll < 2000:
+            num_down_scrolls = random.randint(3, 5)
+        else:
+            num_down_scrolls = random.randint(4, 7)
         remaining = total_scroll
         scroll_targets = []
 
@@ -83,11 +88,11 @@ class VideoService:
 
             # Varying pause duration (longer pauses mid-page, shorter at edges)
             if i == 0:
-                pause_frames = random.randint(12, 20)  # Quick first look
+                pause_frames = int(random.randint(12, 20) * pause_multiplier)
             elif i == len(scroll_targets) - 1:
-                pause_frames = random.randint(15, 25)  # Pause at bottom
+                pause_frames = int(random.randint(15, 25) * pause_multiplier)
             else:
-                pause_frames = random.randint(10, 30)  # Variable mid-page
+                pause_frames = int(random.randint(10, 30) * pause_multiplier)
 
             for _ in range(pause_frames):
                 pattern.append((current_pos, True))
@@ -105,7 +110,7 @@ class VideoService:
                     pattern.append((int(pos), False))
 
                 # Brief pause
-                for _ in range(random.randint(8, 15)):
+                for _ in range(int(random.randint(8, 15) * pause_multiplier)):
                     pattern.append((back_pos, True))
 
                 # Scroll back down
@@ -116,7 +121,12 @@ class VideoService:
                     pattern.append((int(pos), False))
 
         # Scroll back UP (fewer segments, more direct)
-        num_up_scrolls = random.randint(3, 5)
+        if total_scroll < 1000:
+            num_up_scrolls = random.randint(2, 3)
+        elif total_scroll < 2000:
+            num_up_scrolls = random.randint(2, 4)
+        else:
+            num_up_scrolls = random.randint(3, 5)
         up_targets = []
         remaining = total_scroll
 
@@ -146,7 +156,7 @@ class VideoService:
             current_pos = target
 
             # Shorter pauses on the way up (scanning, not reading)
-            pause_frames = random.randint(8, 18)
+            pause_frames = int(random.randint(8, 18) * pause_multiplier)
             for _ in range(pause_frames):
                 pattern.append((max(0, current_pos), True))
 
@@ -185,6 +195,15 @@ class VideoService:
 
                 total_scroll = max(0, page_height - request.height)
 
+                # Apply scroll depth limit (percentage of page)
+                total_scroll = int(total_scroll * request.scroll_depth)
+
+                # Apply max pixel limit if specified (overrides depth)
+                if request.max_scroll_px is not None:
+                    total_scroll = min(total_scroll, request.max_scroll_px)
+
+                logger.info(f"Page height: {page_height}px, scrolling {total_scroll}px (depth: {request.scroll_depth}, max_px: {request.max_scroll_px})")
+
                 # Scroll to top
                 driver.execute_script("window.scrollTo(0, 0)")
                 await asyncio.sleep(0.1)
@@ -193,8 +212,8 @@ class VideoService:
 
                 if realistic_mode:
                     # Realistic human-like scrolling with varying speeds and pauses
-                    logger.info(f"Using realistic scroll pattern (varying segments with backtracks)")
-                    scroll_pattern = self._generate_realistic_scroll_pattern(total_scroll)
+                    logger.info(f"Using realistic scroll pattern (pause_multiplier: {request.pause_multiplier})")
+                    scroll_pattern = self._generate_realistic_scroll_pattern(total_scroll, request.pause_multiplier)
 
                     for scroll_pos, is_pause in scroll_pattern:
                         # Capture frame
