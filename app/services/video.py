@@ -36,11 +36,13 @@ class VideoService:
     def _generate_realistic_scroll_pattern(self, total_scroll: int, num_bursts: int = 3):
         """
         Generate a realistic scroll pattern with bursts and pauses.
+        Scrolls down, then back up.
         Returns list of (scroll_position, is_pause) tuples.
         """
         pattern = []
         scroll_per_burst = total_scroll / num_bursts
 
+        # Scroll DOWN
         for burst in range(num_bursts):
             start_pos = int(burst * scroll_per_burst)
             end_pos = int((burst + 1) * scroll_per_burst)
@@ -58,6 +60,24 @@ class VideoService:
             pause_frames = 20  # ~0.8 seconds at 24fps
             for _ in range(pause_frames):
                 pattern.append((end_pos, True))
+
+        # Scroll back UP
+        for burst in range(num_bursts):
+            start_pos = int(total_scroll - (burst * scroll_per_burst))
+            end_pos = int(total_scroll - ((burst + 1) * scroll_per_burst))
+
+            # Fast scroll phase going up
+            scroll_frames = 15
+            for i in range(scroll_frames):
+                t = i / scroll_frames
+                ease = t * t * (3 - 2 * t)  # Smoothstep
+                pos = start_pos + (end_pos - start_pos) * ease
+                pattern.append((int(max(0, pos)), False))
+
+            # Pause phase
+            pause_frames = 20
+            for _ in range(pause_frames):
+                pattern.append((max(0, end_pos), True))
 
         return pattern
 
