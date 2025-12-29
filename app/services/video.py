@@ -4,6 +4,7 @@ import asyncio
 import tempfile
 import subprocess
 import shutil
+import random
 from pathlib import Path
 from datetime import datetime
 from PIL import Image
@@ -33,51 +34,121 @@ class VideoService:
         }
         return speeds.get(speed, speeds["medium"])
 
-    def _generate_realistic_scroll_pattern(self, total_scroll: int, num_bursts: int = 3):
+    def _generate_realistic_scroll_pattern(self, total_scroll: int):
         """
-        Generate a realistic scroll pattern with bursts and pauses.
-        Scrolls down, then back up.
+        Generate a realistic scroll pattern mimicking human behavior.
+        - Unequal scroll distances (some short, some long)
+        - Varying pause durations
+        - Occasional small backtracks
+        - Scrolls down then back up
         Returns list of (scroll_position, is_pause) tuples.
         """
         pattern = []
-        scroll_per_burst = total_scroll / num_bursts
+        current_pos = 0
 
-        # Scroll DOWN
-        for burst in range(num_bursts):
-            start_pos = int(burst * scroll_per_burst)
-            end_pos = int((burst + 1) * scroll_per_burst)
+        # Generate random scroll segments going DOWN (4-7 segments)
+        num_down_scrolls = random.randint(4, 7)
+        remaining = total_scroll
+        scroll_targets = []
 
-            # Fast scroll phase - accelerate then decelerate
-            scroll_frames = 15  # frames for each scroll burst
-            for i in range(scroll_frames):
-                # Ease-in-out curve for natural acceleration/deceleration
-                t = i / scroll_frames
+        for i in range(num_down_scrolls):
+            if i == num_down_scrolls - 1:
+                # Last segment gets the rest
+                scroll_targets.append(total_scroll)
+            else:
+                # Random portion of remaining distance (15-40%)
+                portion = random.uniform(0.15, 0.40)
+                target = current_pos + int(remaining * portion)
+                scroll_targets.append(target)
+                remaining = total_scroll - target
+                current_pos = target
+
+        current_pos = 0
+
+        # Scroll DOWN with varying behaviors
+        for i, target in enumerate(scroll_targets):
+            scroll_distance = target - current_pos
+
+            # Varying scroll speed (frames) - shorter scrolls are quicker
+            scroll_frames = random.randint(8, 18) if scroll_distance > 200 else random.randint(5, 10)
+
+            # Animate the scroll with easing
+            for f in range(scroll_frames):
+                t = f / scroll_frames
                 ease = t * t * (3 - 2 * t)  # Smoothstep
-                pos = start_pos + (end_pos - start_pos) * ease
+                pos = current_pos + scroll_distance * ease
                 pattern.append((int(pos), False))
 
-            # Pause phase - stay still to "read" content
-            pause_frames = 20  # ~0.8 seconds at 24fps
+            current_pos = target
+
+            # Varying pause duration (longer pauses mid-page, shorter at edges)
+            if i == 0:
+                pause_frames = random.randint(12, 20)  # Quick first look
+            elif i == len(scroll_targets) - 1:
+                pause_frames = random.randint(15, 25)  # Pause at bottom
+            else:
+                pause_frames = random.randint(10, 30)  # Variable mid-page
+
             for _ in range(pause_frames):
-                pattern.append((end_pos, True))
+                pattern.append((current_pos, True))
 
-        # Scroll back UP
-        for burst in range(num_bursts):
-            start_pos = int(total_scroll - (burst * scroll_per_burst))
-            end_pos = int(total_scroll - ((burst + 1) * scroll_per_burst))
+            # Occasional small backtrack (30% chance, not on first or last)
+            if 0 < i < len(scroll_targets) - 1 and random.random() < 0.3:
+                backtrack = random.randint(30, 80)
+                back_pos = max(0, current_pos - backtrack)
 
-            # Fast scroll phase going up
-            scroll_frames = 15
-            for i in range(scroll_frames):
-                t = i / scroll_frames
-                ease = t * t * (3 - 2 * t)  # Smoothstep
-                pos = start_pos + (end_pos - start_pos) * ease
+                # Quick scroll up
+                for f in range(6):
+                    t = f / 6
+                    ease = t * t * (3 - 2 * t)
+                    pos = current_pos - (current_pos - back_pos) * ease
+                    pattern.append((int(pos), False))
+
+                # Brief pause
+                for _ in range(random.randint(8, 15)):
+                    pattern.append((back_pos, True))
+
+                # Scroll back down
+                for f in range(6):
+                    t = f / 6
+                    ease = t * t * (3 - 2 * t)
+                    pos = back_pos + (current_pos - back_pos) * ease
+                    pattern.append((int(pos), False))
+
+        # Scroll back UP (fewer segments, more direct)
+        num_up_scrolls = random.randint(3, 5)
+        up_targets = []
+        remaining = total_scroll
+
+        for i in range(num_up_scrolls):
+            if i == num_up_scrolls - 1:
+                up_targets.append(0)
+            else:
+                portion = random.uniform(0.20, 0.45)
+                target = current_pos - int(remaining * portion)
+                up_targets.append(max(0, target))
+                remaining = target
+                current_pos = target
+
+        current_pos = total_scroll
+
+        # Scroll UP
+        for i, target in enumerate(up_targets):
+            scroll_distance = current_pos - target
+            scroll_frames = random.randint(10, 16)
+
+            for f in range(scroll_frames):
+                t = f / scroll_frames
+                ease = t * t * (3 - 2 * t)
+                pos = current_pos - scroll_distance * ease
                 pattern.append((int(max(0, pos)), False))
 
-            # Pause phase
-            pause_frames = 20
+            current_pos = target
+
+            # Shorter pauses on the way up (scanning, not reading)
+            pause_frames = random.randint(8, 18)
             for _ in range(pause_frames):
-                pattern.append((max(0, end_pos), True))
+                pattern.append((max(0, current_pos), True))
 
         return pattern
 
@@ -121,9 +192,9 @@ class VideoService:
                 frames_captured = 0
 
                 if realistic_mode:
-                    # Realistic burst scrolling with pauses
-                    logger.info(f"Using realistic scroll pattern (3 bursts with pauses)")
-                    scroll_pattern = self._generate_realistic_scroll_pattern(total_scroll, num_bursts=3)
+                    # Realistic human-like scrolling with varying speeds and pauses
+                    logger.info(f"Using realistic scroll pattern (varying segments with backtracks)")
+                    scroll_pattern = self._generate_realistic_scroll_pattern(total_scroll)
 
                     for scroll_pos, is_pause in scroll_pattern:
                         # Capture frame
