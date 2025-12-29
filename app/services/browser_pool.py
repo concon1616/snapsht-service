@@ -60,12 +60,21 @@ class BrowserPool:
         """Create a new Chrome WebDriver instance."""
         options = self._create_chrome_options()
 
-        # Try Homebrew chromedriver first, fallback to webdriver-manager
-        homebrew_chromedriver = "/opt/homebrew/bin/chromedriver"
+        # Try known chromedriver paths, fallback to webdriver-manager
         import os
-        if os.path.exists(homebrew_chromedriver):
-            service = Service(homebrew_chromedriver)
-        else:
+        chromedriver_paths = [
+            "/opt/homebrew/bin/chromedriver",  # macOS Homebrew
+            "/usr/local/bin/chromedriver",      # Linux system
+            "/usr/bin/chromedriver",            # Linux alt
+        ]
+
+        service = None
+        for path in chromedriver_paths:
+            if os.path.exists(path):
+                service = Service(path)
+                break
+
+        if service is None:
             service = Service(ChromeDriverManager().install())
 
         driver = webdriver.Chrome(service=service, options=options)
