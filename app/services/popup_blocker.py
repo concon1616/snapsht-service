@@ -159,10 +159,31 @@ SPIN_WHEEL_SELECTORS = [
     '[class*="spin-wheel"]',
     '[class*="spinwheel"]',
     '[class*="wheel-popup"]',
+    '[class*="spin-to-win"]',
+    '[class*="spintowin"]',
+    '[class*="SpinToWin"]',
     '.spin-to-win',
     '.spin-a-sale',
     '[class*="fortune-wheel"]',
     '[class*="lucky-wheel"]',
+    '[class*="discount-wheel"]',
+    '[class*="coupon-wheel"]',
+    '[class*="prize-wheel"]',
+    # Wheelio specific
+    '[class*="wheelio"]',
+    '#wheelio-container',
+    '.wheelio-widget',
+    # WooHoo / Spin popup
+    '[class*="woohoo"]',
+    '[class*="spin-popup"]',
+    '[class*="spinpopup"]',
+    # Generic wheel patterns
+    '[class*="wheel"][class*="container"]',
+    '[class*="wheel"][class*="modal"]',
+    '[class*="wheel"][class*="overlay"]',
+    '[id*="spin-wheel"]',
+    '[id*="spinwheel"]',
+    '[id*="wheel-popup"]',
 ]
 
 # =============================================================================
@@ -170,15 +191,16 @@ SPIN_WHEEL_SELECTORS = [
 # =============================================================================
 
 SQUARE_SELECTORS = [
-    '[class*="sq-"] [role="dialog"]',
-    '[aria-label*="Sign in"]',
-    '[aria-label*="sign up"]',
+    # Square Online specific modal classes (not generic role selectors)
     '.sq-modal',
-    '[class*="square-market"]',
-    'div[role="dialog"][aria-modal="true"]',
-    # Square Online specific
+    '.sq-popup',
+    '.sq-dialog',
     '.market-login-modal',
     '.market-popup',
+    '.market-modal',
+    '[class*="square-login"]',
+    '[class*="square-signup"]',
+    # Avoid generic [role="dialog"] as it can match main content
 ]
 
 SHOPIFY_POPUP_SELECTORS = [
@@ -258,35 +280,27 @@ NEWSLETTER_SELECTORS = [
 # =============================================================================
 
 GENERIC_MODAL_SELECTORS = [
-    # Modal patterns
+    # Modal overlay/backdrop patterns (these are usually safe to hide)
     '.modal-overlay',
     '.modal-backdrop',
-    '.modal-wrapper',
-    '[class*="modal-overlay"]',
     '[class*="modal-backdrop"]',
-    '[class*="modalOverlay"]',
     '[class*="modalBackdrop"]',
 
-    # Popup patterns
+    # Popup overlay patterns
     '.popup-overlay',
-    '.popup-wrapper',
-    '.popup-container',
     '[class*="popup-overlay"]',
     '[class*="popupOverlay"]',
 
-    # Lightbox
-    '[class*="lightbox"]',
+    # Lightbox overlays
     '.fancybox-overlay',
-    '.featherlight',
+    '.featherlight-overlay',
 
-    # Dialog
-    '[role="dialog"][aria-modal="true"]',
-    '[role="alertdialog"]',
-
-    # Overlay
+    # Specific overlay patterns (not generic [role="dialog"] which can match main content)
     '.overlay-modal',
-    '.page-overlay',
-    '[class*="overlay"][class*="modal"]',
+    '[class*="overlay"][class*="backdrop"]',
+
+    # Note: Removed generic [role="dialog"] and [role="alertdialog"] as they
+    # can match main content containers on some sites (e.g., Square Online)
 ]
 
 # =============================================================================
@@ -615,12 +629,23 @@ def get_popup_dismiss_script() -> str:
             } catch (e) {}
         }
 
-        // Strategy 2: Hide known popup containers
+        // Helper to check if element is too large to be a popup
+        function isTooLargeToBePopup(el) {
+            const rect = el.getBoundingClientRect();
+            const viewportWidth = window.innerWidth;
+            const viewportHeight = window.innerHeight;
+            // If element takes up more than 80% of viewport in both dimensions, it's likely main content
+            return rect.width > viewportWidth * 0.8 && rect.height > viewportHeight * 0.8;
+        }
+
+        // Strategy 2: Hide known popup containers (but skip if too large)
         const hideSelectors = ''' + str(ALL_POPUP_SELECTORS) + ''';
 
         for (const selector of hideSelectors) {
             try {
                 document.querySelectorAll(selector).forEach(el => {
+                    // Skip if element is too large to be a popup (likely main content)
+                    if (isTooLargeToBePopup(el)) return;
                     el.style.setProperty('display', 'none', 'important');
                     el.style.setProperty('visibility', 'hidden', 'important');
                     el.style.setProperty('opacity', '0', 'important');
@@ -642,6 +667,8 @@ def get_popup_dismiss_script() -> str:
                     // Only hide if it's positioned fixed/absolute with high z-index
                     if ((style.position === 'fixed' || style.position === 'absolute') &&
                         parseInt(style.zIndex || '0') > 100) {
+                        // Skip if too large
+                        if (isTooLargeToBePopup(el)) return;
                         el.style.setProperty('display', 'none', 'important');
                     }
                 });
@@ -650,18 +677,24 @@ def get_popup_dismiss_script() -> str:
 
         // Strategy 4: Heuristic detection - hide fixed/sticky elements with popup keywords
         const popupKeywords = [
-            'popup', 'modal', 'overlay', 'newsletter', 'subscribe', 'signup',
-            'sign-up', 'email', 'klaviyo', 'mailchimp', 'omnisend', 'privy',
+            'popup', 'modal', 'newsletter', 'subscribe', 'signup',
+            'sign-up', 'klaviyo', 'mailchimp', 'omnisend', 'privy',
             'justuno', 'optin', 'opt-in', 'lead', 'capture', 'exit', 'discount',
-            'coupon', 'spin', 'wheel', 'fomo', 'social-proof', 'notification'
+            'coupon', 'spin', 'wheel', 'fomo', 'social-proof', 'notification',
+            'spinwheel', 'spin-wheel', 'spintowin', 'spin-to-win', 'wheelio',
+            'woohoo', 'prize-wheel', 'lucky-wheel', 'fortune-wheel', 'game-popup'
         ];
 
-        document.querySelectorAll('div, section, aside, dialog, [role="dialog"]').forEach(el => {
+        // Note: Removed [role="dialog"] from query as it can match main content on some sites
+        document.querySelectorAll('div, section, aside, dialog').forEach(el => {
             const style = window.getComputedStyle(el);
             const isFixed = style.position === 'fixed' || style.position === 'sticky';
             const isHighZ = parseInt(style.zIndex || '0') > 999;
 
             if (isFixed || isHighZ) {
+                // Skip if too large to be a popup
+                if (isTooLargeToBePopup(el)) return;
+
                 const classList = Array.from(el.classList).join(' ').toLowerCase();
                 const id = (el.id || '').toLowerCase();
                 const hasKeyword = popupKeywords.some(kw =>
@@ -685,7 +718,30 @@ def get_popup_dismiss_script() -> str:
             }
         });
 
-        // Strategy 6: Re-enable scrolling on body
+        // Strategy 6: Text-content based detection for spin wheels and promotional popups
+        const promoKeywords = ['spin to win', 'spin & win', 'spin and win', 'lucky wheel',
+                               'prize wheel', 'discount wheel', 'win up to', 'spin for',
+                               'enter to win', 'get your discount', 'unlock your'];
+
+        document.querySelectorAll('div, section, aside').forEach(el => {
+            const text = (el.textContent || '').toLowerCase();
+            const hasPromoText = promoKeywords.some(kw => text.includes(kw));
+
+            if (hasPromoText) {
+                const style = window.getComputedStyle(el);
+                const isOverlay = style.position === 'fixed' || style.position === 'absolute';
+                const isHighZ = parseInt(style.zIndex || '0') > 100;
+
+                if (isOverlay || isHighZ) {
+                    // Check if it's not too large (main content)
+                    if (!isTooLargeToBePopup(el)) {
+                        el.style.setProperty('display', 'none', 'important');
+                    }
+                }
+            }
+        });
+
+        // Strategy 7: Re-enable scrolling on body
         document.body.style.overflow = 'auto';
         document.body.style.position = 'static';
         document.documentElement.style.overflow = 'auto';

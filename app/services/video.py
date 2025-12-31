@@ -196,10 +196,19 @@ class VideoService:
                 # Dismiss popups before capturing video
                 await self._dismiss_popups(driver)
 
-                # Get page height
-                page_height = driver.execute_script(
-                    "return Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)"
-                )
+                # Trigger lazy loading by doing a quick scroll-through first
+                await self._trigger_lazy_load(driver)
+
+                # Get page height (using multiple methods for reliability)
+                page_height = driver.execute_script("""
+                    return Math.max(
+                        document.body.scrollHeight || 0,
+                        document.body.offsetHeight || 0,
+                        document.documentElement.scrollHeight || 0,
+                        document.documentElement.offsetHeight || 0,
+                        document.documentElement.clientHeight || 0
+                    );
+                """)
 
                 total_scroll = max(0, page_height - request.height)
 
@@ -387,6 +396,39 @@ class VideoService:
             filepath.unlink()
             return True
         return False
+
+    async def _trigger_lazy_load(self, driver):
+        """Scroll through page quickly to trigger lazy-loaded content."""
+        scroll_script = """
+            return new Promise((resolve) => {
+                const scrollStep = window.innerHeight;
+                const maxScroll = Math.max(
+                    document.body.scrollHeight || 0,
+                    document.documentElement.scrollHeight || 0,
+                    5000  // Minimum scroll distance to check
+                );
+                let currentScroll = 0;
+
+                const scroll = () => {
+                    if (currentScroll < maxScroll) {
+                        window.scrollTo(0, currentScroll);
+                        currentScroll += scrollStep;
+                        setTimeout(scroll, 100);
+                    } else {
+                        window.scrollTo(0, 0);
+                        setTimeout(() => resolve(true), 300);
+                    }
+                };
+                scroll();
+            });
+        """
+        try:
+            await asyncio.get_event_loop().run_in_executor(
+                None, driver.execute_script, scroll_script
+            )
+            await asyncio.sleep(0.5)
+        except Exception as e:
+            logger.warning(f"Lazy load trigger failed: {e}")
 
     async def _dismiss_popups(self, driver):
         """
