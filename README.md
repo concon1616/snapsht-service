@@ -6,13 +6,32 @@ A Python/FastAPI screenshot and video capture service using Selenium (snapsht-st
 
 - **Screenshot Capture**: Full-page or viewport screenshots
 - **Video Recording**: Smooth scrolling videos (MP4, WebM, GIF)
+- **Realistic Scrolling**: Human-like scroll patterns with variable speeds, pauses, and backtracks
 - **Batch Processing**: Process multiple URLs concurrently
 - **React Frontend**: Web UI for easy capture
 - **API Documentation**: Auto-generated Swagger docs
 
-## Quick Start
+## Deployment
 
-### Backend
+### Production (monk.godigitalpigeon.com)
+
+Running as a systemd service on port 8001:
+
+```bash
+# Service management
+systemctl status snapsht
+systemctl restart snapsht
+journalctl -u snapsht -f  # View logs
+
+# Update deployment
+cd /opt/snapsht-service
+git pull
+systemctl restart snapsht
+```
+
+**API URL**: `http://monk.godigitalpigeon.com:8001`
+
+### Local Development
 
 ```bash
 cd ~/Projects/snapsht-service
@@ -74,9 +93,37 @@ npm run dev
   "duration": 5000,
   "fps": 24,
   "format": "mp4",
-  "scroll_speed": "medium"
+  "scroll_speed": "realistic",
+  "scroll_depth": 0.5,
+  "max_scroll_px": 2000,
+  "pause_multiplier": 1.5
 }
 ```
+
+### Video Parameters
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `url` | string | required | URL to capture |
+| `width` | int | 1280 | Viewport width (100-1920) |
+| `height` | int | 720 | Viewport height (100-1080) |
+| `duration` | int | 5000 | Max duration in ms (1000-30000) |
+| `fps` | int | 24 | Frames per second (10-60) |
+| `format` | string | "mp4" | Output format: mp4, webm, gif |
+| `scroll_speed` | string | "medium" | slow, medium, fast, **realistic** |
+| `scroll_depth` | float | 1.0 | How much of page to scroll (0.1-1.0) |
+| `max_scroll_px` | int | null | Hard pixel limit (overrides depth) |
+| `pause_multiplier` | float | 1.0 | Pause duration multiplier (0.5-3.0) |
+
+### Realistic Scroll Mode
+
+When `scroll_speed: "realistic"`, the video mimics human browsing behavior:
+
+- **Unequal scroll distances**: Some short, some long (not uniform segments)
+- **Variable pause durations**: Longer mid-page, shorter at edges
+- **Occasional backtracks**: 30% chance to scroll back up briefly mid-page
+- **Scroll down then up**: Scrolls to bottom, then back to top
+- **Adaptive segments**: Fewer segments for shorter pages
 
 ## Batch Request
 
@@ -107,7 +154,7 @@ Environment variables (`.env`):
 
 - Python 3.12+
 - Chrome/Chromium browser
-- ChromeDriver (via Homebrew: `brew install chromedriver`)
+- ChromeDriver (macOS: `brew install chromedriver`, Linux: `/usr/local/bin/chromedriver`)
 - FFmpeg (for video encoding)
 - Node.js 18+ (for frontend)
 
@@ -131,6 +178,8 @@ snapsht-service/
 │   └── models/
 │       └── schemas.py       # Pydantic models
 ├── client/                  # React frontend
+├── docs/
+│   └── breadcrumbs/         # Development session notes
 ├── tests/
 │   └── test_domains.py      # Domain testing script
 ├── requirements.txt
