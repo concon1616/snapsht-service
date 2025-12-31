@@ -11,6 +11,11 @@ from PIL import Image
 from io import BytesIO
 
 from .browser_pool import browser_pool
+from .popup_blocker import (
+    ALL_POPUP_SELECTORS,
+    generate_hiding_css,
+    get_enhanced_popup_dismiss_script,
+)
 from ..config import get_settings
 from ..utils.logger import logger
 from ..models.schemas import VideoRequest, VideoResponse
@@ -187,6 +192,9 @@ class VideoService:
 
                 # Wait for page load
                 await asyncio.sleep(2)
+
+                # Dismiss popups before capturing video
+                await self._dismiss_popups(driver)
 
                 # Get page height
                 page_height = driver.execute_script(
@@ -379,6 +387,45 @@ class VideoService:
             filepath.unlink()
             return True
         return False
+
+    async def _dismiss_popups(self, driver):
+        """
+        Aggressively dismiss popups, modals, cookie banners, and ESP signup forms.
+        """
+        # First, inject CSS to immediately hide known popup selectors
+        hiding_css = generate_hiding_css(ALL_POPUP_SELECTORS)
+        try:
+            await asyncio.get_event_loop().run_in_executor(
+                None,
+                driver.execute_script,
+                f"""
+                var style = document.createElement('style');
+                style.textContent = `{hiding_css}`;
+                document.head.appendChild(style);
+                """
+            )
+        except Exception as e:
+            logger.warning(f"Failed to inject hiding CSS: {e}")
+
+        # Then run the comprehensive dismiss script
+        dismiss_script = get_enhanced_popup_dismiss_script()
+        try:
+            await asyncio.get_event_loop().run_in_executor(
+                None, driver.execute_script, dismiss_script
+            )
+        except Exception as e:
+            logger.warning(f"Failed to run dismiss script: {e}")
+
+        # Wait for any animations to complete
+        await asyncio.sleep(0.5)
+
+        # Run a second pass to catch any delayed popups
+        try:
+            await asyncio.get_event_loop().run_in_executor(
+                None, driver.execute_script, dismiss_script
+            )
+        except Exception as e:
+            logger.warning(f"Second dismiss pass failed: {e}")
 
 
 # Global video service instance

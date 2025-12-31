@@ -12,6 +12,11 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 
 from .browser_pool import browser_pool
+from .popup_blocker import (
+    ALL_POPUP_SELECTORS,
+    generate_hiding_css,
+    get_enhanced_popup_dismiss_script,
+)
 from ..config import get_settings
 from ..utils.logger import logger
 from ..models.schemas import ScreenshotRequest, ScreenshotResponse
@@ -144,56 +149,51 @@ class CaptureService:
         await asyncio.sleep(0.5)
 
     async def _dismiss_popups(self, driver):
-        """Dismiss common popups, modals, cookie banners."""
-        dismiss_script = """
-            // Common popup close selectors
-            const selectors = [
-                '[class*="close"]', '[class*="Close"]',
-                '[aria-label*="close"]', '[aria-label*="Close"]',
-                '[class*="dismiss"]', '[class*="Dismiss"]',
-                '[class*="cookie"] button', '[class*="Cookie"] button',
-                '[id*="cookie"] button', '[id*="Cookie"] button',
-                '[class*="consent"] button', '[class*="Consent"] button',
-                '[class*="gdpr"] button', '[class*="GDPR"] button',
-                '.modal-close', '.popup-close', '.close-button',
-                '[data-dismiss="modal"]', '[data-close]',
-                'button[aria-label="Close"]',
-                '[class*="newsletter"] [class*="close"]',
-                '[class*="popup"] [class*="close"]',
-                '[class*="modal"] [class*="close"]',
-            ];
-
-            for (const selector of selectors) {
-                try {
-                    const elements = document.querySelectorAll(selector);
-                    elements.forEach(el => {
-                        if (el.offsetParent !== null) {
-                            el.click();
-                        }
-                    });
-                } catch (e) {}
-            }
-
-            // Hide overlays
-            const overlaySelectors = [
-                '[class*="overlay"]',
-                '[class*="modal-backdrop"]',
-                '[class*="popup-overlay"]',
-            ];
-
-            for (const selector of overlaySelectors) {
-                try {
-                    document.querySelectorAll(selector).forEach(el => {
-                        el.style.display = 'none';
-                    });
-                } catch (e) {}
-            }
         """
+        Aggressively dismiss popups, modals, cookie banners, and ESP signup forms.
 
-        await asyncio.get_event_loop().run_in_executor(
-            None, driver.execute_script, dismiss_script
-        )
-        await asyncio.sleep(0.3)
+        Uses comprehensive selectors for:
+        - ESP popups: Klaviyo, Mailchimp, Omnisend, Sendlane, Privy, Justuno, OptinMonster, etc.
+        - E-commerce modals: Square, Shopify, BigCommerce, WooCommerce
+        - Cookie/consent banners
+        - Chat widgets
+        - Newsletter signup forms
+        - Generic modal/popup patterns
+        """
+        # First, inject CSS to immediately hide known popup selectors
+        hiding_css = generate_hiding_css(ALL_POPUP_SELECTORS)
+        try:
+            await asyncio.get_event_loop().run_in_executor(
+                None,
+                driver.execute_script,
+                f"""
+                var style = document.createElement('style');
+                style.textContent = `{hiding_css}`;
+                document.head.appendChild(style);
+                """
+            )
+        except Exception as e:
+            logger.warning(f"Failed to inject hiding CSS: {e}")
+
+        # Then run the comprehensive dismiss script
+        dismiss_script = get_enhanced_popup_dismiss_script()
+        try:
+            await asyncio.get_event_loop().run_in_executor(
+                None, driver.execute_script, dismiss_script
+            )
+        except Exception as e:
+            logger.warning(f"Failed to run dismiss script: {e}")
+
+        # Wait for any animations to complete
+        await asyncio.sleep(0.5)
+
+        # Run a second pass to catch any delayed popups
+        try:
+            await asyncio.get_event_loop().run_in_executor(
+                None, driver.execute_script, dismiss_script
+            )
+        except Exception as e:
+            logger.warning(f"Second dismiss pass failed: {e}")
 
     async def _capture_element(self, driver, selector: str) -> bytes:
         """Capture a specific element."""
