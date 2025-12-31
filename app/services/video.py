@@ -176,7 +176,7 @@ class VideoService:
         # Check for realistic scroll mode
         realistic_mode = getattr(request, 'realistic', False) or request.scroll_speed == "realistic"
 
-        async with browser_pool.get_driver() as driver:
+        async with browser_pool.get_driver(block_popups=request.dismiss_popups) as driver:
             # Create temp directory for frames
             temp_dir = Path(tempfile.mkdtemp())
 
@@ -194,7 +194,8 @@ class VideoService:
                 await asyncio.sleep(2)
 
                 # Dismiss popups before capturing video
-                await self._dismiss_popups(driver)
+                if request.dismiss_popups:
+                    await self._dismiss_popups(driver)
 
                 # Trigger lazy loading by doing a quick scroll-through first
                 await self._trigger_lazy_load(driver)

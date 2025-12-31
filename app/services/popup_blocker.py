@@ -191,7 +191,7 @@ SPIN_WHEEL_SELECTORS = [
 # =============================================================================
 
 SQUARE_SELECTORS = [
-    # Square Online specific modal classes (not generic role selectors)
+    # Square Online specific modal classes
     '.sq-modal',
     '.sq-popup',
     '.sq-dialog',
@@ -200,7 +200,14 @@ SQUARE_SELECTORS = [
     '.market-modal',
     '[class*="square-login"]',
     '[class*="square-signup"]',
-    # Avoid generic [role="dialog"] as it can match main content
+    # Square Online sign-in modal (common patterns)
+    '[class*="SignIn"]',
+    '[class*="signin"]',
+    '[class*="sign-in"]',
+    '[class*="LoginModal"]',
+    '[class*="login-modal"]',
+    '[class*="AuthModal"]',
+    '[class*="auth-modal"]',
 ]
 
 SHOPIFY_POPUP_SELECTORS = [
@@ -718,10 +725,14 @@ def get_popup_dismiss_script() -> str:
             }
         });
 
-        // Strategy 6: Text-content based detection for spin wheels and promotional popups
+        // Strategy 6: Text-content based detection for spin wheels, sign-in modals, and promotional popups
         const promoKeywords = ['spin to win', 'spin & win', 'spin and win', 'lucky wheel',
                                'prize wheel', 'discount wheel', 'win up to', 'spin for',
-                               'enter to win', 'get your discount', 'unlock your'];
+                               'enter to win', 'get your discount', 'unlock your',
+                               // Sign-in/Account modals
+                               'sign in or create an account', 'sign in or sign up',
+                               'create an account with', 'get order status notifications',
+                               'sign up for exclusive', 'join our mailing list'];
 
         document.querySelectorAll('div, section, aside').forEach(el => {
             const text = (el.textContent || '').toLowerCase();

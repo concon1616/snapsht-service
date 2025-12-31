@@ -37,7 +37,7 @@ class CaptureService:
         filename = f"{capture_id}.{request.format}"
         filepath = self.settings.output_dir / filename
 
-        async with browser_pool.get_driver() as driver:
+        async with browser_pool.get_driver(block_popups=request.dismiss_popups) as driver:
             try:
                 # Set viewport size
                 driver.set_window_size(request.width, request.height)

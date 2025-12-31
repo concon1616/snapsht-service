@@ -8,6 +8,77 @@ from typing import AsyncGenerator
 from ..utils.logger import logger
 from ..config import get_settings
 
+# Domains to block at network level (prevents popup scripts from loading)
+BLOCKED_POPUP_DOMAINS = [
+    # ESPs - Email Service Providers
+    "*klaviyo.com*",
+    "*static.klaviyo.com*",
+    "*a.klaviyo.com*",
+    "*chimpstatic.com*",
+    "*list-manage.com*",
+    "*mailchimp.com*",
+    "*omnisend.com*",
+    "*omnisrc.com*",
+    "*privy.com*",
+    "*privymktg.com*",
+    "*cdn.attn.tv*",
+    "*attn.tv*",
+    "*sendlane.com*",
+    "*activehosted.com*",
+    "*activecampaign.com*",
+    "*hsforms.com*",
+    "*hs-scripts.com*",
+    "*getresponse.com*",
+    "*convertkit.com*",
+    "*ck.page*",
+    "*getdrip.com*",
+    "*drip.com*",
+    "*aweber.com*",
+    "*constantcontact.com*",
+    "*ctctcdn.com*",
+    "*brevo.com*",
+    "*sendinblue.com*",
+    "*mailerlite.com*",
+    "*moosend.com*",
+
+    # Popup Tools
+    "*optinmonster.com*",
+    "*optmstr.com*",
+    "*api.opmnstr.com*",
+    "*justuno.com*",
+    "*cdn.justuno.com*",
+    "*sumo.com*",
+    "*sumome.com*",
+    "*load.sumo.com*",
+    "*optimonk.com*",
+    "*wisepops.com*",
+    "*poptin.com*",
+    "*sleeknote.com*",
+    "*hellobar.com*",
+    "*picreel.com*",
+    "*plerdy.com*",
+    "*claspo.io*",
+
+    # Spin Wheel / Gamification
+    "*wheelio.com*",
+    "*wheelpop.com*",
+    "*spinwheel.io*",
+
+    # Social Proof / FOMO
+    "*provesrc.com*",
+    "*useproof.com*",
+    "*fomo.com*",
+    "*nudgify.com*",
+    "*trustpulse.com*",
+
+    # Chat Widgets (optional - can be toggled)
+    # "*intercom.com*",
+    # "*drift.com*",
+    # "*crisp.chat*",
+    # "*zendesk.com*",
+    # "*tawk.to*",
+]
+
 
 class BrowserPool:
     def __init__(self):
@@ -132,9 +203,36 @@ class BrowserPool:
         self._drivers.clear()
         self._initialized = False
 
+    def _enable_network_blocking(self, driver: webdriver.Chrome, block_popups: bool = True):
+        """Enable network-level blocking of popup/ESP domains."""
+        if not block_popups:
+            # Clear any existing blocks
+            try:
+                driver.execute_cdp_cmd('Network.setBlockedURLs', {'urls': []})
+            except Exception:
+                pass
+            return
+
+        try:
+            # Enable network domain
+            driver.execute_cdp_cmd('Network.enable', {})
+
+            # Block popup domains at network level
+            driver.execute_cdp_cmd('Network.setBlockedURLs', {
+                'urls': BLOCKED_POPUP_DOMAINS
+            })
+
+            logger.debug(f"Network blocking enabled for {len(BLOCKED_POPUP_DOMAINS)} domains")
+        except Exception as e:
+            logger.warning(f"Failed to enable network blocking: {e}")
+
     @asynccontextmanager
-    async def get_driver(self) -> AsyncGenerator[webdriver.Chrome, None]:
-        """Get a driver from the pool."""
+    async def get_driver(self, block_popups: bool = True) -> AsyncGenerator[webdriver.Chrome, None]:
+        """Get a driver from the pool.
+
+        Args:
+            block_popups: If True, blocks popup/ESP domains at network level
+        """
         if not self._initialized:
             await self.initialize()
 
@@ -142,12 +240,16 @@ class BrowserPool:
         self._active_count += 1
 
         try:
+            # Enable network blocking for popup domains
+            self._enable_network_blocking(driver, block_popups)
             yield driver
         finally:
             self._active_count -= 1
             # Reset driver state
             try:
                 driver.delete_all_cookies()
+                # Clear network blocks
+                driver.execute_cdp_cmd('Network.setBlockedURLs', {'urls': []})
             except Exception:
                 pass
             await self._available.put(driver)

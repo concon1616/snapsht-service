@@ -37,6 +37,7 @@ class VideoRequest(BaseModel):
     scroll_depth: float = Field(default=1.0, ge=0.1, le=1.0)  # How much of page to scroll (0.1-1.0)
     max_scroll_px: int | None = Field(default=None, ge=100)  # Max pixels to scroll (overrides depth)
     pause_multiplier: float = Field(default=1.0, ge=0.5, le=3.0)  # Slow down pauses (1.0 = normal)
+    dismiss_popups: bool = True  # Block popup/ESP domains and dismiss popups
 
 
 class VideoResponse(BaseModel):
